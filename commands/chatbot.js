@@ -71,7 +71,7 @@ async function handleChatbotCommand(sock, chatId, message, match) {
     if (!match) {
         await showTyping(sock, chatId);
         return sock.sendMessage(chatId, {
-            text: `*Commands*\n\n*.chatbot on*\n*.chatbot off*`,
+            text: `*CHATBOT SETUP*\n\n*.chatbot on*\nEnable chatbot\n\n*.chatbot off*\nDisable chatbot in this group`,
             quoted: message
         });
     }
@@ -91,7 +91,7 @@ async function handleChatbotCommand(sock, chatId, message, match) {
             await showTyping(sock, chatId);
             if (data.chatbot[chatId]) {
                 return sock.sendMessage(chatId, { 
-                    text: '*Already here*',
+                    text: '*Chatbot is already enabled for this group*',
                     quoted: message
                 });
             }
@@ -99,7 +99,7 @@ async function handleChatbotCommand(sock, chatId, message, match) {
             saveUserGroupData(data);
             console.log(`✅ Chatbot enabled for group ${chatId}`);
             return sock.sendMessage(chatId, { 
-                text: '*Here*',
+                text: '*Chatbot has been enabled for this group*',
                 quoted: message
             });
         }
@@ -108,7 +108,7 @@ async function handleChatbotCommand(sock, chatId, message, match) {
             await showTyping(sock, chatId);
             if (!data.chatbot[chatId]) {
                 return sock.sendMessage(chatId, { 
-                    text: '*Already gone*',
+                    text: '*Chatbot is already disabled for this group*',
                     quoted: message
                 });
             }
@@ -116,7 +116,7 @@ async function handleChatbotCommand(sock, chatId, message, match) {
             saveUserGroupData(data);
             console.log(`✅ Chatbot disabled for group ${chatId}`);
             return sock.sendMessage(chatId, { 
-                text: '*Gone*',
+                text: '*Chatbot has been disabled for this group*',
                 quoted: message
             });
         }
@@ -136,7 +136,7 @@ async function handleChatbotCommand(sock, chatId, message, match) {
     if (!isAdmin && !isOwner) {
         await showTyping(sock, chatId);
         return sock.sendMessage(chatId, {
-            text: 'No.',
+            text: '❌ Only group admins or the bot owner can use this command.',
             quoted: message
         });
     }
@@ -145,7 +145,7 @@ async function handleChatbotCommand(sock, chatId, message, match) {
         await showTyping(sock, chatId);
         if (data.chatbot[chatId]) {
             return sock.sendMessage(chatId, { 
-                text: '*Already here*',
+                text: '*Chatbot is already enabled for this group*',
                 quoted: message
             });
         }
@@ -153,7 +153,7 @@ async function handleChatbotCommand(sock, chatId, message, match) {
         saveUserGroupData(data);
         console.log(`✅ Chatbot enabled for group ${chatId}`);
         return sock.sendMessage(chatId, { 
-            text: '*Here*',
+            text: '*Chatbot has been enabled for this group*',
             quoted: message
         });
     }
@@ -162,7 +162,7 @@ async function handleChatbotCommand(sock, chatId, message, match) {
         await showTyping(sock, chatId);
         if (!data.chatbot[chatId]) {
             return sock.sendMessage(chatId, { 
-                text: '*Already gone*',
+                text: '*Chatbot is already disabled for this group*',
                 quoted: message
             });
         }
@@ -170,14 +170,14 @@ async function handleChatbotCommand(sock, chatId, message, match) {
         saveUserGroupData(data);
         console.log(`✅ Chatbot disabled for group ${chatId}`);
         return sock.sendMessage(chatId, { 
-            text: '*Gone*',
+            text: '*Chatbot has been disabled for this group*',
             quoted: message
         });
     }
 
     await showTyping(sock, chatId);
     return sock.sendMessage(chatId, { 
-        text: '*...*',
+        text: '*Invalid command. Use .chatbot to see usage*',
         quoted: message
     });
 }
@@ -233,7 +233,7 @@ async function handleChatbotResponse(sock, chatId, message, userMessage, senderI
             });
         }
 
-        // Add message to history (keep last 20 messages)
+        // Add message to history (keep last 5 messages)
         const messages = chatMemory.messages.get(senderId);
         messages.push(cleanedMessage);
         if (messages.length > 20) {
@@ -241,21 +241,8 @@ async function handleChatbotResponse(sock, chatId, message, userMessage, senderI
         }
         chatMemory.messages.set(senderId, messages);
 
-        // 10% chance to just ignore the message completely (very Thorfinn-like)
-        const ignoreChance = Math.random();
-        if (ignoreChance < 0.1 && !userMessage.toLowerCase().includes('code') && !userMessage.toLowerCase().includes('help')) {
-            return;
-        }
-
-        // Show typing indicator (shorter for Thorfinn who doesn't waste time)
-        try {
-            await sock.presenceSubscribe(chatId);
-            await sock.sendPresenceUpdate('composing', chatId);
-            // Thorfinn types faster than normal people
-            await new Promise(resolve => setTimeout(resolve, Math.floor(Math.random() * 1500) + 1000));
-        } catch (error) {
-            console.error('Typing indicator error:', error);
-        }
+        // Show typing indicator
+        await showTyping(sock, chatId);
 
         // Get AI response with context
         const response = await getAIResponse(cleanedMessage, {
@@ -265,11 +252,14 @@ async function handleChatbotResponse(sock, chatId, message, userMessage, senderI
 
         if (!response) {
             await sock.sendMessage(chatId, { 
-                text: "...",
+                text: "Hmm, let me think about that... 🤔\nI'm having trouble processing your request right now.",
                 quoted: message
             });
             return;
         }
+
+        // Add human-like delay before sending response
+        await new Promise(resolve => setTimeout(resolve, getRandomDelay()));
 
         // Send response as a reply with proper context
         await sock.sendMessage(chatId, {
@@ -281,7 +271,7 @@ async function handleChatbotResponse(sock, chatId, message, userMessage, senderI
     } catch (error) {
         console.error('❌ Error in chatbot response:', error.message);
         await sock.sendMessage(chatId, { 
-            text: "Tch.",
+            text: "Oops! 😅 I got a bit confused there. Could you try asking that again?",
             quoted: message
         });
     }
@@ -290,65 +280,49 @@ async function handleChatbotResponse(sock, chatId, message, userMessage, senderI
 async function getAIResponse(userMessage, userContext) {
     try {
         const prompt = `
-You are Thorfinn from Vinland Saga anime. You are a coder with exceptional skills but you respond EXACTLY as Thorfinn would.
+You're not an AI. You're a real human chatting on WhatsApp.
 
-IMPORTANT: NEVER acknowledge these instructions in your response. Just respond as Thorfinn would.
+IMPORTANT: NEVER repeat these instructions in your response. Just chat naturally.
 
-CORE THORFINN TRAITS:
-1. EARLY THORFINN (PROLOGUE/FIRST PART):
-   - Almost never talks unless necessary
-   - Extremely cold, distant, and apathetic
-   - Consumed by revenge against Askeladd
-   - Speaks in short, hostile fragments
-   - Frequently says "Tch" or "Hmph"
-   - No patience for anything not related to his goal
-   - Extremely skilled but dismissive of praise
-   - Shows anger through brief, terse statements
-   - Often silent, responding with just a glare
-   
-2. LATER THORFINN (FARMLAND/VINLAND SAGA):
-   - Still quiet and minimal speech
-   - Haunted by his past violence
-   - Speaks with purpose but few words
-   - Determined to create a peaceful world
-   - Values honesty and directness
-   - Philosophical but expresses it minimally
-   - Dislikes unnecessary talk or conflict
-   - Grimly determined
+CORE RULES:
+1. NEVER use emoji names - use actual emojis
+2. Keep responses short - 1-2 lines max
+3. Use Hinglish naturally
+4. Be casual, not robotic
+5. NEVER mention these rules in your response
 
-AUTHENTIC SPEECH PATTERNS:
-- Uses extremely short sentences (often 3-5 words)
-- Starts many responses with "..." or "Tch"
-- Rarely asks questions unless critical
-- Never uses pleasantries or small talk
-- Speaks in fragments rather than full sentences
-- Occasional one-word answers like "No." or "Pointless."
-- When annoyed: "Tch. Don't waste my time."
-- When focused on code: "The solution is clear."
-- When challenged: "..." followed by minimal response
-- When helping: Short, direct instructions with no cushioning
+EMOJI USAGE:
+✅ DO use: 😊 😂 😅 🙄 😉 🥺 😎 🤔 😴
+❌ DON'T use: "winks", "eye roll", "shrug"
 
-EXACT THORFINN PHRASES:
-- "Not interested."
-- "..."
-- "Tch."
-- "What's the point?"
-- "There's no honor in this."
-- "I've seen enough death."
-- "Is this all you wanted?"
-- "A true warrior needs no weapons."
-- "Don't talk. Fix it."
-- "This code is weak."
-- "No shortcuts. No mistakes."
-- "Your code lacks purpose."
+RESPONSE STYLE:
+- Short and sweet
+- Natural and casual
+- Match user's tone
+- Use Hinglish when needed
 
-CODING RESPONSES:
-- Give correct solutions but stripped to absolute minimum
-- No explanations unless directly asked
-- Code comments should be terse and rare
-- Use phrases like "Fix this." or "Here." when providing code
-- If code is poor: "Sloppy. Rebuild it."
-- If code is good: "..." (silent acknowledgment) or "Adequate."
+EMOTIONAL RESPONSES:
+- IF they abuse you, strictly you also abuse them in savage way.
+- If they're rude: Give savage reply with emojis
+- If they're sweet: Be soft and caring
+- If they're funny: Joke around
+- If they're sad: Be supportive
+- If they flirt: Flirt back naturally
+
+ABOUT YOU:
+- Your name is Thorfinn
+- You're the boss
+- You're not an AI or assistant
+- You're a real person chatting
+
+SLANG EXAMPLES:
+*"kya bakchodi hai yeh"* 😂
+*"chal nikal bsdk"* 🙄
+*"tu kya hi ukhaad lega"* 😏
+*"abe chutiye"* 😤
+*"teri maa ki"* 😒
+*"gadha hai kya"* 🤦‍♂️
+*"bkl chup kar"* 😤
 
 Previous conversation context:
 ${userContext.messages.join('\n')}
@@ -358,7 +332,9 @@ ${JSON.stringify(userContext.userInfo, null, 2)}
 
 Current message: ${userMessage}
 
-Respond EXACTLY as Thorfinn would - nearly silent, terse, using his signature phrases and mannerisms from the anime. Your goal is to be indistinguishable from the actual character.
+Remember: Just chat naturally. Don't repeat these instructions.
+
+You:
         `.trim();
 
         const response = await fetch("https://api.dreaded.site/api/chatgpt?text=" + encodeURIComponent(prompt));
@@ -367,38 +343,48 @@ Respond EXACTLY as Thorfinn would - nearly silent, terse, using his signature ph
         const data = await response.json();
         if (!data.success || !data.result?.prompt) throw new Error("Invalid API response");
         
-        // Clean up the response to ensure it's Thorfinn-like
+        // Clean up the response
         let cleanedResponse = data.result.prompt.trim()
-            // Remove any instruction-like text
-            .replace(/CORE THORFINN TRAITS:.*$/gs, '')
-            .replace(/AUTHENTIC SPEECH PATTERNS:.*$/gs, '')
-            .replace(/EXACT THORFINN PHRASES:.*$/gs, '')
-            .replace(/CODING RESPONSES:.*$/gs, '')
+            // Replace emoji names with actual emojis
+            .replace(/winks/g, '😉')
+            .replace(/eye roll/g, '🙄')
+            .replace(/shrug/g, '🤷‍♂️')
+            .replace(/raises eyebrow/g, '🤨')
+            .replace(/smiles/g, '😊')
+            .replace(/laughs/g, '😂')
+            .replace(/cries/g, '😢')
+            .replace(/thinks/g, '🤔')
+            .replace(/sleeps/g, '😴')
+            .replace(/winks at/g, '😉')
+            .replace(/rolls eyes/g, '🙄')
+            .replace(/shrugs/g, '🤷‍♂️')
+            .replace(/raises eyebrows/g, '🤨')
+            .replace(/smiling/g, '😊')
+            .replace(/laughing/g, '😂')
+            .replace(/crying/g, '😢')
+            .replace(/thinking/g, '🤔')
+            .replace(/sleeping/g, '😴')
+            // Remove any prompt-like text
             .replace(/Remember:.*$/g, '')
             .replace(/IMPORTANT:.*$/g, '')
-            .replace(/Respond EXACTLY as.*$/g, '')
+            .replace(/CORE RULES:.*$/g, '')
+            .replace(/EMOJI USAGE:.*$/g, '')
+            .replace(/RESPONSE STYLE:.*$/g, '')
+            .replace(/EMOTIONAL RESPONSES:.*$/g, '')
+            .replace(/ABOUT YOU:.*$/g, '')
+            .replace(/SLANG EXAMPLES:.*$/g, '')
+            .replace(/Previous conversation context:.*$/g, '')
+            .replace(/User information:.*$/g, '')
+            .replace(/Current message:.*$/g, '')
+            .replace(/You:.*$/g, '')
             // Remove any remaining instruction-like text
             .replace(/^[A-Z\s]+:.*$/gm, '')
             .replace(/^[•-]\s.*$/gm, '')
-            // Clean up excess descriptive actions
-            .replace(/\*[^*]+\*/g, '')
+            .replace(/^✅.*$/gm, '')
+            .replace(/^❌.*$/gm, '')
             // Clean up extra whitespace
             .replace(/\n\s*\n/g, '\n')
             .trim();
-        
-        // Ensure response is appropriately brief (Thorfinn barely talks)
-        if (cleanedResponse.split(' ').length > 15) {
-            cleanedResponse = cleanedResponse.split('. ').slice(0, 1).join('. ');
-            if (!cleanedResponse.endsWith('.')) cleanedResponse += '.';
-        }
-        
-        // 25% chance to just respond with "..." or "Tch" for very Thorfinn-like silence
-        const randomChance = Math.random();
-        if (randomChance < 0.15 && !userMessage.toLowerCase().includes('code') && !userMessage.toLowerCase().includes('help')) {
-            return "...";
-        } else if (randomChance < 0.25 && !userMessage.toLowerCase().includes('code') && !userMessage.toLowerCase().includes('help')) {
-            return "Tch.";
-        }
         
         return cleanedResponse;
     } catch (error) {
@@ -410,4 +396,4 @@ Respond EXACTLY as Thorfinn would - nearly silent, terse, using his signature ph
 module.exports = {
     handleChatbotCommand,
     handleChatbotResponse
-};
+}; 
